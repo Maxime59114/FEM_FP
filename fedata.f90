@@ -52,6 +52,7 @@ module fedata
         !! might not use all of the properties defined below
         real(wp) :: young
             !! Young's Modulus
+        real(wp) :: youngt
         real(wp) :: nu
             !! Poisson's Ratio
         real(wp) :: thk
@@ -64,6 +65,7 @@ module fedata
             !! Young's Modulus in the transverse direction (used for orthotropic materials)
         real(wp) :: shear
             !! Shear Modulus (used for orthotropic materials)
+        real(wp) :: sigma_Y
     end type matprop
     type(matprop), dimension(:), allocatable :: mprop
         !! The materials of a structure
