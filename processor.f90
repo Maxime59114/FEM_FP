@@ -157,10 +157,12 @@ contains
 
         ! And reset all other mprop parameters
         mprop%young = 0
+        mprop%youngt = 0
         mprop%nu = 0
         mprop%dens = 0
         mprop%youngy = 0
         mprop%shear = 0
+        mprop%sigma_Y = 0
         do e = 1, ne
             element(e)%ix = 0
         end do
@@ -238,6 +240,8 @@ contains
                 select case (cvalue)
                 case ('EX', 'ex')
                     mprop(ivalue)%young = rvalue
+                case ('Et','et')
+                    mprop(ivalue)%youngt = rvalue
                 case ('PRXY', 'prxy')
                     mprop(ivalue)%nu = rvalue
                 case ('DENS', 'dens')
@@ -246,6 +250,8 @@ contains
                     mprop(ivalue)%youngy = rvalue
                 case ('GXY', 'gxy')
                     mprop(ivalue)%shear = rvalue
+                case ('SIGMAY','sigmay')
+                    mprop(ivalue)%sigma_Y = rvalue
                 case default
                     write (*, *) 'ERROR: Undefined material property: ', trim(cvalue)
                     stop
