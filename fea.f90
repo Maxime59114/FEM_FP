@@ -150,10 +150,12 @@ contains
 
         ! Local variables
         INTEGER :: i, elem_interest
-        REAL :: delta_P(size(P)), P_n(size(P))
+        REAL :: delta_P(size(P)), P_n(size(P)), stress_previous(3,ne), strain_previous(3,ne)
         LOGICAL :: elastic(ne)
         REAL :: delta_D(size(P))
         REAL, ALLOCATABLE :: Ktmatr(:,:), K_num(:,:)
+
+        REAL, dimension(3,ne) ::  stress_np, strain_np
 
         ! Initialize variables
         elem_interest = 2
@@ -166,6 +168,10 @@ contains
         elem_strain = 0.0
         elem_stress = 0.0
 
+        stress_previous = 0.0
+        strain_previous = 0.0
+
+
         DO i = 1, n_increments
             PRINT *, "Iteration number: ", i
             ! Update P_n
@@ -173,8 +179,8 @@ contains
             P_n = P_n + delta_P
 
             ! Compute stiffness matrix
-            CALL plasticStiffness(X, ne, IX, mprop, D_n, elastic, K_num)
-
+            CALL plasticStiffness(X, ne, IX, mprop , elastic, K_num,stress_previous, strain_previous,i)
+            
             ! Enforce boundary conditions
             CALL enforce(K_num, delta_P, bound, Ktmatr, delta_P)
 
@@ -511,5 +517,69 @@ contains
         print *, C
 
     end subroutine
+!
+!--------------------------------------------------------------------------------------------------
+!
+
+    subroutine plasticStiffness(elastic, K_num,stress_previous, strain_previous,i)
+
+        use fedata
+        use link1
+        use plane42rect
+        use plane42
+
+        integer :: e, j
+        integer :: nen
+
+        integer, dimension(mdim) :: edof
+        real(wp), dimension(mdim) :: xe
+        real(wp), dimension(mdim, mdim) :: ke
+
+        integer, intent(in) :: i
+
+
+
+        real(wp), dimension(:,:), intent(inout) :: K_num
+
+        real(wp) :: young, youngt, nu, dens, thk, sigma_Y
+
+
+
+
+        real(wp) :: stress_e_p(3)
+        K_num = 0
+
+
+        do e = 1,ne
+
+            ! Find coordinates and degrees of freedom
+            nen = element(e)%numnode
+
+            do j = 1, nen
+                 xe(2*j-1) = x(element(e)%ix(j),1)
+                 xe(2*j  ) = x(element(e)%ix(j),2)
+                 edof(2*j-1) = 2 * element(e)%ix(j) - 1
+                 edof(2*j)   = 2 * element(e)%ix(j)
+            end do
+
+            young = mprop(element(e)%mat)%young
+            youngt = mprop(element(e)%mat)%youngt
+            nu = mprop(element(e)%mat)%nu
+            thk = mprop(element(e)%mat)%thk
+            sigma_Y = mprop(element(e)%mat)%sigma_Y
+
+
+            stress_e_p(1) = stress_previous(1,e)
+            stress_e_p(2) = stress_previous(2,e)
+            stress_e_p(3) = stress_previous(3,e)
+
+
+            call plane42_ke_plastic(xe, young, youngt, sigma_Y, nu, thk, ke, stress_e_p)
+
+        end do
 
 end module fea
+
+
+
+
