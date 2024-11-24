@@ -124,6 +124,7 @@ module fedata
         !! * column 3: \(\sigma_{12}\)
     real(wp), dimension(:),   allocatable :: p
         !! Force vector
+    real(wp), dimension(:),   allocatable :: del_p
     real(wp), dimension(:),   allocatable :: d
         !! Displacement vector
 
@@ -168,6 +169,8 @@ module fedata
     logical, parameter :: banded = .false.
     !logical, parameter :: banded = .true.
         !! Indicate whether the system matrix is in banded form or not (full matrix)
+    logical, parameter :: plasticity = .true.
+        !! Indicate if the analysis is also plastic
     logical, parameter :: penalty = .false.
         !! Indicate whether boundary conditions are imposed by the penalty method or not (zero-one method)
     real(wp), parameter :: penalty_fac = 1.0e10_wp
