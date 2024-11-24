@@ -5,7 +5,7 @@ module fea
     implicit none
     save
     private
-    public :: displ, initial, buildload, buildstiff, enforce, recover
+    public :: displ, initial, buildload, buildstiff, enforce, recover, plastic_iterator_1, plastic_enforce
 
 contains
 
@@ -45,7 +45,7 @@ contains
             allocate(kmat(bw,neqn))
             print *, 'allocation implemented for band'
         end if
-        allocate (p(neqn), d(neqn))
+        allocate (p(neqn), d(neqn), del_p(neqn))
         allocate (strain(ne, 3), stress(ne, 3))
         allocate (principals(ne, 3))
 
@@ -67,6 +67,11 @@ contains
         integer :: e
         real(wp), dimension(:), allocatable :: plotval, psv1, psv2, psvang
         real(wp), allocatable :: kmat_old(:,:)
+
+        if plasticity then
+            call plastic_iterator_1
+            stop
+        end if
 
         allocate(kmat_old(bw,neqn))
 
@@ -139,58 +144,49 @@ contains
 
     end subroutine displ
 
-    subroutine plastic_iterator_1(P, n_increments, X, IX, ne, mprop, bound, &
-                            D_n, stress_n, strain_n, elem_stress, elem_strain)
-        ! Input variables
-        REAL, INTENT(IN) :: P(:), X(:,:), mprop(:), bound(:)
-        INTEGER, INTENT(IN) :: n_increments, ne, IX(:,:)
+    subroutine plastic_iterator_1
 
-        ! Output variables
-        REAL, INTENT(OUT) :: D_n(:), stress_n(:), strain_n(:), elem_stress(:), elem_strain(:)
+        use fedata
+        use numeth
+        use processor
 
-        ! Local variables
-        INTEGER :: i, elem_interest
-        REAL :: delta_P(size(P)), P_n(size(P))
-        LOGICAL :: elastic(ne)
-        REAL :: delta_D(size(P))
-        REAL, ALLOCATABLE :: Ktmatr(:,:), K_num(:,:)
+        integer :: n_increments, i
+        real(wp) :: p_n(size(p)), delta_p(size(p))
 
-        ! Initialize variables
-        elem_interest = 2
-        delta_P = P / REAL(n_increments)
-        P_n = 0.0
-        D_n = 0.0
-        stress_n = 0.0
-        strain_n = 0.0
-        elastic = .TRUE.
-        elem_strain = 0.0
-        elem_stress = 0.0
+        n_increments = 10
+
+        call buildload !Makes sure vector p is correct
+
+        p_n = 0.0
+        del_p = 0.0
+        delta_p = p/REAL(n_increments)
 
         DO i = 1, n_increments
             PRINT *, "Iteration number: ", i
-            ! Update P_n
 
-            P_n = P_n + delta_P
+            ! Update P_n
+            p_n = p_n + delta_p
 
             ! Compute stiffness matrix
-            CALL plasticStiffness(X, ne, IX, mprop, D_n, elastic, K_num)
+            call buildstiff
 
             ! Enforce boundary conditions
-            CALL enforce(K_num, delta_P, bound, Ktmatr, delta_P)
+            call plastic_enforce
 
             ! Solve for delta_D
-            CALL solveSystem(Ktmatr, delta_P, delta_D)
-
+            ! Factor stiffness matrix
+            call factor(kmat)
+            ! Solve for displacement vector
+            del_p = delta_p
+            call solve(kmat, del_p)
+            ! Transfer results
+            deld(1:neqn) = del_p(1:neqn)
             ! Update D_n
-            D_n = D_n + delta_D
-
+            d = d + deld
             ! Recover stress and strain
-            CALL plasticRecover(IX, ne, X, mprop, delta_D, strain_n, stress_n, elastic)
-
-            ! Store strain and stress for the element of interest
-            elem_strain(i) = strain_n(elem_interest)
-            elem_stress(i) = stress_n(elem_interest)
+            call recover
         END DO
+        !!Process the results
 
    end subroutine plastic_iterator_1
 !
@@ -222,19 +218,12 @@ contains
         ! Build load vector
         re = 0.0
         p(1:neqn) = 0
-        !print *, np
 
         do i = 1, np
             select case(int(loads(i, 1)))
             case( 1 )
-            	! Build nodal load contribution
-            	!print *, 'the loads come here'
-            	!print *, loads(i, :)
             	idx = (2*loads(i, 2) + loads(i, 3) - 2)
-            	!print *, idx
             	p(idx) = p(idx) + loads(i, 4)
-                !p(6) = -0.1_wp
-                !print *, 'WARNING in fea/buildload: You need to replace hardcoded nodal load with your code'
             case( 2 )
                 print *, 'surface traction'
                 e = loads(i, 2)
@@ -248,28 +237,16 @@ contains
                 fe = loads(i, 4)
                 thk = mprop(element(e)%mat)%thk
                 eface = loads(i, 3)
-                call plane42_re(xe, eface, fe, thk, re)
-                !print *, 're'
-                !print *, re
-                !print *, 'p'
-                !print *, p
-
+                call plane42rect_re(xe, eface, fe, thk, re)
                 do k = 1, nen*2
                     p(edof(k)) = p(edof(k)) + re(k)
                 end do
-
-            	! Build uniformly distributed surface (pressure) load contribution
-                !print *, 'ERROR in fea/buildload'
-                !print *, 'Distributed loads not defined -- you need to add your own code here'
-                !stop !restore this stop if needed - idk what it was for
             case default
                 print *, 'ERROR in fea/buildload'
                 print *, 'Load type not known'
                 stop
             end select
         end do
-        !print *, 'This is p'
-        !print *, p
     end subroutine buildload
 !
 !--------------------------------------------------------------------------------------------------
@@ -286,30 +263,16 @@ contains
 
         integer :: e, i, j
         integer :: nen
-! Hint for system matrix in band form:
-!        integer :: irow, icol
         integer, dimension(mdim) :: edof
         real(wp), dimension(mdim) :: xe
         real(wp), dimension(mdim, mdim) :: ke
-! Hint for modal analysis:
-!        real(wp), dimension(mdim, mdim) :: me
         real(wp) :: young, area
-! Hint for modal analysis and continuum elements:
         real(wp) :: nu, dens, thk
 
         ! Reset stiffness matrix
-        if (.not. banded) then
-            kmat = 0
-        else
-            kmat = 0
-            print *, 'Stiffnes band matrix reset'
-            !print*,'ERROR in fea/buildstiff'
-            !print*,'Band form not implemented -- you need to add your own code here'
-            !stop
-        end if
+        kmat = 0
 
         do e = 1, ne
-
             ! Find coordinates and degrees of freedom
             nen = element(e)%numnode
             do i = 1, nen
@@ -324,15 +287,20 @@ contains
             case( 1 )
                  young = mprop(element(e)%mat)%young
                  area  = mprop(element(e)%mat)%area
-                 call link1_ke(xe, young, area, ke)
+                 if (plasticity) then
+                    call link1_ke_plastic()
+                 else
+                    call link1_ke(xe, young, area, ke)
+                 end if
             case( 2 )
                 young = mprop(element(e)%mat)%young
                 nu = mprop(element(e)%mat)%nu
                 thk = mprop(element(e)%mat)%thk
-                call plane42_ke(xe, young, nu, thk, ke)
-                 !print *, 'ERROR in fea/buildstiff:'
-                 !print *, 'Stiffness matrix for plane42rect elements not implemented -- you need to add your own code here'
-                 !stop
+                if (plasticity) then
+                    call plane42_ke_plastic()
+                 else
+                    call plane42_ke(xe, young, nu, thk, ke)
+                 end if
             end select
 
             ! Assemble into global matrix
@@ -355,17 +323,8 @@ contains
                         end if
                     end do
                 end do
-
-                !stop
-                print *, 'The global matrix assembly was implemented - check correctness'
-                !print *, 'ERROR in fea/buildstiff'
-                !print *, 'Band form not implemented -- you need to add our own code here'
-                !stop
             end if
         end do
-        !print *, kmat(8,1:12)
-        !stop
-        !print *, 'end buildstiff'
     end subroutine buildstiff
 !
 !--------------------------------------------------------------------------------------------------
@@ -410,10 +369,6 @@ contains
                     end if
 
                     spc2 = spc - idof + 1
-                    !print *, 'spec2'
-                    !print *, kmat(1:spc2, idof)
-                    !print *, 'ps'
-                    !print *, p(idof:spc)
                     p(idof:spc) = p(idof:spc) - kmat(1:spc2, idof) * bound(i, 3)
 
                     p(idof) = bound(i, 3)
@@ -424,8 +379,6 @@ contains
                     end do
                     kmat(1, idof) = 1
                 end do
-                !print *, 'The changed matrix'
-                !print *, kmat(8, 1:12)
             else
                 penal = penalty_fac*maxval(kmat)
                 do i = 1, nb
@@ -435,9 +388,6 @@ contains
                 end do
             end if
             print *, 'Implemented the boundary condition enforcement - check for correctness'
-            !print *, 'ERROR in fea/enforce'
-            !print *, 'Band form not implemented -- you need to add your own code here'
-            !stop
         end if
     end subroutine enforce
 !
@@ -483,20 +433,28 @@ contains
             case( 1 )
                 young = mprop(element(e)%mat)%young
                 area  = mprop(element(e)%mat)%area
-                call link1_ke(xe, young, area, ke)
-                p(edof(1:2*nen)) = p(edof(1:2*nen)) + matmul(ke(1:2*nen,1:2*nen), de(1:2*nen))
-                call link1_ss(xe, de, young, estress, estrain)
+                if (plasticity) then
+                    call link1_ke_plastic()
+                    p(edof(1:2*nen)) = p(edof(1:2*nen)) + matmul(ke(1:2*nen,1:2*nen), de(1:2*nen))
+                    call link1_ss_plastic()
+                else
+                    call link1_ke(xe, young, area, ke)
+                    p(edof(1:2*nen)) = p(edof(1:2*nen)) + matmul(ke(1:2*nen,1:2*nen), de(1:2*nen))
+                    call link1_ss(xe, de, young, estress, estrain)
+                end if
                 stress(e, 1:3) = estress
                 strain(e, 1:3) = estrain
             case( 2 )
                 young = mprop(element(e)%mat)%young
                 nu = mprop(element(e)%mat)%nu
-                call plane42_ss(xe, de, young, nu, estress, estrain, eprincipals)
+                if (plasticity) then
+                    call plane42_ss_plastic()
+                 else
+                    call plane42_ss(xe, de, young, nu, estress, estrain, eprincipals)
+                 end if
                 stress(e, 1:3) = estress
                 strain(e, 1:3) = estrain
                 principals(e, 1:3) = eprincipals
-                !print *, 'WARNING in fea/recover: Stress and strain not calculated for continuum' &
-                    !// 'elements -- you need to add your own code here'
             end select
         end do
     end subroutine recover
@@ -511,5 +469,67 @@ contains
         print *, C
 
     end subroutine
+
+
+    subroutine plastic_enforce
+
+        !! This subroutine enforces the support boundary conditions - for plastic case
+
+        use fedata
+
+        integer :: i, idof, j, k, spc, spc2
+        real(wp) :: penal
+
+        ! Correct for supports
+        if (.not. banded) then
+            if (.not. penalty) then
+                do i = 1, nb
+                    idof = int(2*(bound(i,1)-1) + bound(i,2))
+                    del_p(1:neqn) = del_p(1:neqn) - kmat(1:neqn, idof) * bound(i, 3)
+                    del_p(idof) = bound(i, 3)
+                    kmat(1:neqn, idof) = 0
+                    kmat(idof, 1:neqn) = 0
+                    kmat(idof, idof) = 1
+                end do
+            else
+                penal = penalty_fac*maxval(kmat)
+                do i = 1, nb
+                    idof = int(2*(bound(i,1)-1) + bound(i,2))
+                    kmat(idof, idof) = kmat(idof, idof) + penal
+                    del_p(idof) = penal * bound(i, 3)
+                end do
+            end if
+        else
+            if (.not. penalty) then
+                do i = 1, nb
+                    idof = int(2*(bound(i,1)-1) + bound(i,2))
+
+                    spc = idof+bw-1
+
+                    if (spc >bw) then
+                        spc = bw
+                    end if
+
+                    spc2 = spc - idof + 1
+                    del_p(idof:spc) = del_p(idof:spc) - kmat(1:spc2, idof) * bound(i, 3)
+
+                    del_p(idof) = bound(i, 3)
+                    kmat(1:bw,idof) = 0
+
+                    do j = 1, idof
+                        kmat(idof-j+1, j) = 0
+                    end do
+                    kmat(1, idof) = 1
+                end do
+            else
+                penal = penalty_fac*maxval(kmat)
+                do i = 1, nb
+                    idof = int(2*(bound(i,1)-1) + bound(i,2))
+                    kmat(1, idof) = kmat(1, idof) + penal
+                    del_p(idof) = penal * bound(i, 3)
+                end do
+            end if
+        end if
+    end subroutine plastic_enforce
 
 end module fea
