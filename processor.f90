@@ -153,7 +153,7 @@ contains
         allocate (bound(nb, 3), loads(np, 4))
 
         ! Make thickness equal to one as default
-        mprop%thk = 0.01
+        mprop%thk = 1
 
         ! And reset all other mprop parameters
         mprop%young = 0
