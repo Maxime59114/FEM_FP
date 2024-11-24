@@ -136,6 +136,16 @@ module fedata
         !! * column 2: principal stress 2
         !! * column 3: angle between principal stresses
 
+    real(wp), dimension(:,:), allocatable :: sigma_n
+        !! Stresses from iteration n in each element
+        !!
+        !! * _i_-th row: stress in element _i_
+        !! * column 1: sigma11
+        !! * column 2: sigma22
+        !! * column 3: sigma12 = sigma21
+    real(wp), dimension(:), allocatable :: sigma_yield
+        !! the value of yield stress for each element
+
     ! Input/Output
     character(len=50) :: filename
         !! Name of input file
