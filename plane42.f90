@@ -476,4 +476,334 @@ contains
     end subroutine plane42_ss
 
 
+!
+!--------------------------------------------------------------------------------------------------
+!
+
+    subroutine plane42_ke_plastic(xe, young, youngt, esigma_Y_p, nu, thk, ke, estress_p)
+
+        !! This subroutine constructs the plastic stiffness matrix for
+        !! a rectangular 4-noded quad element.
+
+        real(wp), intent(in) :: young, youngt, nu, thk
+            ! - young = elastic young modulus
+            ! - youngt = plastic young modulus
+
+        real(wp), intent(in) :: esigma_Y_p
+            ! - sigma_Y_p: vector of the yield stress, load increment n-1 (previous step)
+
+        real(wp), dimension(:), intent(in) :: xe
+            !! Nodal coordinates of this element in undeformed configuration
+            !!
+            !! * `xe(1:2)` = \((x,y)\)-coordinates of element node 1
+            !! * `xe(3:4)` = \((x,y)\)-coordinates of element node 1
+            !! * `xe(5:6)` = \((x,y)\)-coordinates of element node 2
+            !! * `xe(7:8)` = \((x,y)\)-coordinates of element node 2
+            !!
+            !! See also [[plane42rect]]
+        real(wp), dimension(3), intent(in) :: estress_p
+            ! - estress_p: stress of element e, load increment n-1 (previous step)
+
+        real(wp), dimension(:,:), intent(out) :: ke
+            !! Stiffness matrix
+
+        integer :: gpn
+
+
+        real(wp), allocatable :: gauss_points(:), weights(:)
+
+
+
+        real(wp) ::  fact, aa, bb, volume, F
+            ! - F: Yield function
+
+        real(wp) :: n1ze, n2ze, n3ze, n4ze, n1et, n2et, n3et, n4et
+        real(wp) :: zeta, eta, wi, wj, dxdzeta, dydzeta, dxdeta, dydeta, det_J, sigma_e, h
+        real(wp) :: J_(2,2), n_tylde(4, 8), G_tylde(4, 4), L(3, 4), Bmat(3, 8), test(4,8), c_inter(1,3), cmat_epd(1,1)
+
+
+        integer :: i, j
+
+        real(wp), dimension(3,3) :: cmat, cmat_ep
+            ! - cmat: Cmatrix for elastic behavior
+            ! - cmat_ep: C matrix for plastic behavior
+        real(wp), dimension(1,3) :: dFdsigma
+            ! - dFdsigma: derivative of F by sigma
+
+        gpn = 2
+        allocate(gauss_points(gpn))
+        allocate(weights(gpn))
+
+
+        ke = 0
+        volume = 0
+
+        aa = (xe(3)-xe(1))/2
+        bb = (xe(8)-xe(2))/2
+
+        ! build constitutive matrix (plane stress)
+        cmat = 0
+        fact = young/(1-nu**2)
+        cmat(1,1) = fact
+        cmat(1,2) = fact*nu
+        cmat(2,1) = fact*nu
+        cmat(2,2) = fact
+        cmat(3,3) = fact*(1-nu)/2
+
+        sigma_e = sqrt(estress_p(1)**2 + estress_p(2)**2 - estress_p(1)*estress_p(2) + 3*estress_p(3)**2)
+        h = (youngt*young)/(young - youngt)
+
+        F = sigma_e - esigma_Y_p
+        dFdsigma(1,1) = (2*estress_p(1) - estress_p(2))/sigma_e
+        dFdsigma(1,2) = (2*estress_p(2) - estress_p(1))/sigma_e
+        dFdsigma(1,3) = 6*estress_p(3)/sigma_e
+
+        print*,'dFdsigma', dFdsigma
+        print*,'cmat',cmat
+        print*,'transposedF',transpose(dFdsigma)
+
+        cmat_epd = matmul(matmul(dFdsigma,cmat),transpose(dFdsigma))
+        print*,'cmat_epd',cmat_epd
+        stop
+        cmat_ep = cmat - (matmul(matmul(cmat,transpose(dFdsigma)),matmul(dFdsigma,cmat)))/(cmat_epd(1,1)+h)
+
+
+        if (gpn == 1) then
+            gauss_points = [real(wp):: 0.0]
+            weights = [real(wp):: 2.0]
+        elseif (gpn == 2) then
+            gauss_points = [real(wp):: 1.0/sqrt(3.0), -1.0/sqrt(3.0)]
+            weights = [real(wp):: 1.0, 1.0]
+        elseif (gpn == 3) then
+            gauss_points = [real(wp):: 0, sqrt(0.6), -1.0*sqrt(0.6)]
+            weights = [real(wp):: 8.0/9.0, 5.0/9.0, 5.0/9.0]
+        else
+            print *, 'Invalid number of gauss points'
+            stop
+        end if
+
+
+        !print *, 'no gauss points'
+        !print *, gpn
+
+        do i=1, gpn
+            zeta = gauss_points(i)
+            wi = weights(i)
+            do j=1, gpn
+                eta = gauss_points(j)
+                wj = weights(j)
+
+                n1ze = -0.25*(1.0-eta)
+                n1et = -0.25*(1.0-zeta)
+                n2ze = 0.25*(1.0-eta)
+                n2et = -0.25*(1.0+zeta)
+                n3ze = 0.25*(1.0+eta)
+                n3et = 0.25*(1.0+zeta)
+                n4ze = -0.25*(1.0+eta)
+                n4et = 0.25*(1.0-zeta)
+
+                dxdzeta = n1ze*xe(1) + n2ze*xe(3) + n3ze*xe(5) + n4ze*xe(7)
+                dydzeta = n1ze*xe(2) + n2ze*xe(4) + n3ze*xe(6) + n4ze*xe(8)
+                dxdeta = n1et*xe(1) + n2et*xe(3) + n3et*xe(5) + n4et*xe(7)
+                dydeta = n1et*xe(2) + n2et*xe(4) + n3et*xe(6) + n4et*xe(8)
+
+                J_(1, 1:2) = [dxdzeta, dydzeta]
+                J_(2, 1:2) = [dxdeta, dydeta]
+                det_J = dxdzeta*dydeta-dydzeta*dxdeta
+
+                !print *, det_J
+                !print *, 'and matrix'
+                !print *, J_
+
+                n_tylde(1, 1:8) = [real(wp) :: n1ze, 0.0, n2ze, 0.0, n3ze, 0.0, n4ze, 0.0]
+                n_tylde(2, 1:8) = [real(wp) :: n1et, 0, n2et, 0, n3et, 0, n4et, 0.0]
+                n_tylde(3, 1:8) = [real(wp) :: 0.0, n1ze, 0.0, n2ze, 0.0, n3ze, 0.0, n4ze]
+                n_tylde(4, 1:8) = [real(wp) :: 0.0, n1et, 0.0, n2et, 0.0, n3et, 0.0, n4et]
+
+
+                G_tylde = 0
+                G_tylde(1, 1:4) = [real(wp) :: J_(2,2), -J_(1,2), 0.0,0.0]
+                G_tylde(2, 1:4) = [real(wp) :: -J_(2,1), J_(1,1), 0.0,0.0]
+                G_tylde(3, 1:4) = [real(wp) :: 0.0, 0.0, J_(2,2), -J_(1,2)]
+                G_tylde(4, 1:4) = [real(wp) :: 0.0, 0.0, -J_(2,1), J_(1,1)]
+
+                G_tylde = (1.0/det_J)*G_tylde
+
+                L(1, 1:4) = [real(wp) :: 1.0, 0.0, 0.0, 0.0]
+                L(2, 1:4) = [real(wp) :: 0.0, 0.0, 0.0, 1.0]
+                L(3, 1:4) = [real(wp) :: 0.0, 1.0, 1.0, 0.0]
+
+                test = matmul(G_tylde, n_tylde)
+
+                !print *, test(2, 1:8)
+
+
+                Bmat = matmul(L, test)
+
+                volume = volume + thk*det_J*wi*wj
+
+                if (F < 0) then
+                    ke = ke + thk*matmul(transpose(Bmat), matmul(cmat, Bmat))*det_J*wi*wj
+                else
+                    ke = ke + thk*matmul(transpose(Bmat), matmul(cmat_ep, Bmat))*det_J*wi*wj
+
+                end if
+
+
+            end do
+        end do
+
+    end subroutine plane42_ke_plastic
+!
+!--------------------------------------------------------------------------------------------------
+!
+    subroutine plane42_ss_plastic(xe, delta_de_n, young, youngt, nu,estress_p,estress_n, estrain_p, delta_estrain_n, esigma_Y_p, esigma_Y_n)
+
+        real(wp), intent(in) :: young, youngt, nu
+            ! - young = elastic young modulus
+            ! - youngt = plastic young modulus
+
+        real(wp), dimension(8,1), intent(in) :: delta_de_n
+            ! delta_de_n displacement of increment n of the element e
+
+        real(wp), dimension(3,1), intent(in) :: estress_p, estrain_p
+            ! - estress_p: stress of the element e, load increment n-1 (previous step)
+            ! - estrain_p: strain of the element e, load increment n-1 (previous step)
+
+        real(wp), dimension(3,1), intent(out) :: estress_n
+            ! - estress_n: stress of the element e, load increment n (actual step)
+
+        real(wp), intent(in) :: esigma_Y_p
+            ! - esigma_Y_p: yield stress of element e, load increment n-1 (previous step)
+
+        real(wp), intent(out) :: esigma_Y_n
+            ! - esigma_Y_n: yield stress of element e, load increment n (actual step)
+
+        real(wp), dimension(:), intent(in) :: xe
+                !! Nodal coordinates of this element in undeformed configuration
+                !!
+                !! * `xe(1:2)` = \((x,y)\)-coordinates of element node 1
+                !! * `xe(3:4)` = \((x,y)\)-coordinates of element node 1
+                !! * `xe(5:6)` = \((x,y)\)-coordinates of element node 2
+                !! * `xe(7:8)` = \((x,y)\)-coordinates of element node 2
+                !!
+
+        integer :: gpn, i, j
+        real(wp), allocatable :: gauss_points(:), weights(:)
+        real(wp) :: fact,F, delta_lambda_n,
+         ! - F: Yield function
+         ! - delta_lambda_n: plastic multiplier, load increment n (actual step)
+
+         real(wp) :: dFdsigma_p(1,3)
+            ! - dFdsigma_p: derivative of F by sigma
+
+        real(wp) :: delta_estress_n
+            ! - stress of element e, load increment n (actual step)
+
+        real(wp) :: bmat(3, 8), cmat(3, 3), lambda_denom(1,1)
+        real(wp) :: n1ze, n2ze, n3ze, n4ze, n1et, n2et, n3et, n4et, zeta, eta, wi, wj, dxdzeta, dydzeta, dxdeta, dydeta, det_J
+        real(wp) :: J(2,2), n_tylde(4, 8), G_tylde(4, 4), L(3, 4)
+
+        cmat = 0
+        fact = young/(1-nu**2)
+        cmat(1,1) = fact
+        cmat(1,2) = fact*nu
+        cmat(2,1) = fact*nu
+        cmat(2,2) = fact
+        cmat(3,3) = fact*(1-nu)/2
+
+        if (gpn == 1) then
+            gauss_points = [real(wp):: 0.0]
+            weights = [real(wp):: 2.0]
+        elseif (gpn == 2) then
+            gauss_points = [real(wp):: 1.0/sqrt(3.0), -1.0/sqrt(3.0)]
+            weights = [real(wp):: 1.0, 1.0]
+        elseif (gpn == 3) then
+            gauss_points = [real(wp):: 0, sqrt(0.6), -1.0*sqrt(0.6)]
+            weights = [real(wp):: 8.0/9.0, 5.0/9.0, 5.0/9.0]
+        else
+            print *, 'Invalid number of gauss points'
+            stop
+        end if
+
+
+        !Gaussian point must be chose - chosen in then middle
+
+        zeta = 0
+        eta = 0
+        wi = 2
+        wj = 2
+
+        n1ze = -0.25*(1.0-eta)
+        n1et = -0.25*(1.0-zeta)
+        n2ze = 0.25*(1.0-eta)
+        n2et = -0.25*(1.0+zeta)
+        n3ze = 0.25*(1.0+eta)
+        n3et = 0.25*(1.0+zeta)
+        n4ze = -0.25*(1.0+eta)
+        n4et = 0.25*(1.0-zeta)
+
+        dxdzeta = n1ze*xe(1) + n2ze*xe(3) + n3ze*xe(5) + n4ze*xe(7)
+        dydzeta = n1ze*xe(2) + n2ze*xe(4) + n3ze*xe(6) + n4ze*xe(8)
+        dxdeta = n1et*xe(1) + n2et*xe(3) + n3et*xe(5) + n4et*xe(7)
+        dydeta = n1et*xe(2) + n2et*xe(4) + n3et*xe(6) + n4et*xe(8)
+
+        J(1, 1:2) = [dxdzeta, dydzeta]
+        J(2, 1:2) = [dxdeta, dydeta]
+        det_J = dxdzeta*dydeta-dxdeta*dydzeta
+
+        n_tylde(1, 1:8) = [real(wp) :: n1ze, 0, n2ze, 0, n3ze, 0, n4ze, 0]
+        n_tylde(2, 1:8) = [real(wp) :: n1et, 0, n2et, 0, n3et, 0, n4et, 0]
+        n_tylde(3, 1:8) = [real(wp) :: 0, n1ze, 0, n2ze, 0, n3ze, 0, n4ze]
+        n_tylde(4, 1:8) = [real(wp) :: 0, n1et, 0, n2et, 0, n3et, 0, n4et]
+
+        G_tylde = 0
+        G_tylde(1, 1:4) = [real(wp) :: J(2,2), -J(1,2), 0.0,0.0]
+        G_tylde(2, 1:4) = [real(wp) :: -J(2,1), J(1,1), 0.0,0.0]
+        G_tylde(3, 1:4) = [real(wp) :: 0.0, 0.0, J(2,2), -J(1,2)]
+        G_tylde(4, 1:4) = [real(wp) :: 0.0, 0.0, -J(2,1), J(1,1)]
+        G_tylde = (1/det_J)*G_tylde
+
+        L(1, 1:4) = [real(wp) :: 1.0, 0.0, 0.0, 0.0]
+        L(2, 1:4) = [real(wp) :: 0.0, 0.0, 0.0, 1.0]
+        L(3, 1:4) = [real(wp) :: 0.0, 1.0, 1.0, 0.0]
+
+        bmat = matmul(L, matmul(G_tylde, N_tylde))
+
+
+        sigma_e = sqrt(estress_p(1)**2 + estress_p(2)**2 - estress_p(1)*estress_p(2) + 3*estress_p(3)**2)
+        h = (youngy*young)/(young - youngy)
+
+        F = sigma_e - esigma_Y_p
+        dFdsigma_p(1,1) = (2*estress_p(1) - estress_p(2))/sigma_e
+        dFdsigma_p(1,2) = (2*estress_p(2) - estress_p(1))/sigma_e
+        dFdsigma_p(1,3) = 6*estress_p(3)/sigma_e
+
+        do i = 1,ggn
+            do j = 1,ggn
+                delta_estrain_n = matmul(bmat,delta_de_n)
+
+                if (F<0) then
+                    delta_estress_n = matmul(cmat,delta_estrain_n)
+                    esigma_Y_n = esigma_Y_p
+
+                else
+                    lambda_denom = matmul(matmul(dFdsigma,cmat),transpose(dFdsigma))
+                    delta_lambda_n = matmul(matmul(dFdsgima_p,cmat)/(lambda_denom(1,1) + h), delta_estrain_n
+
+                    delta_estress_n = matmul(cmat,delta_estrain_n - transpose(dFdsigma_p)*delta_lambda_n)
+                    if (delta_lambda_n >= 0) then
+                        esigma_Y_n = esigma_Y_p + h*delta_lambda_n
+                    end if
+                end if
+                estress_n = estress_p + delta_estress_n
+            end do
+        end do
+
+    end subroutine plane42_ss_plastic
+
+
+
+
+
 end module plane42
