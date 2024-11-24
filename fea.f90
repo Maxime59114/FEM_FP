@@ -48,6 +48,8 @@ contains
         allocate (p(neqn), d(neqn), del_p(neqn))
         allocate (strain(ne, 3), stress(ne, 3))
         allocate (principals(ne, 3))
+        allocate (sigma_n(ne, 3))
+        allocate (sigma_yield(ne))
 
         ! Initial stress and strain
         strain = 0
@@ -68,7 +70,7 @@ contains
         real(wp), dimension(:), allocatable :: plotval, psv1, psv2, psvang
         real(wp), allocatable :: kmat_old(:,:)
 
-        if plasticity then
+        if (plasticity) then
             call plastic_iterator_1
             stop
         end if
@@ -151,7 +153,7 @@ contains
         use processor
 
         integer :: n_increments, i
-        real(wp) :: p_n(size(p)), delta_p(size(p))
+        real(wp) :: p_n(size(p)), delta_p(size(p)), deld(size(p))
 
         n_increments = 10
 
@@ -160,12 +162,18 @@ contains
         p_n = 0.0
         del_p = 0.0
         delta_p = p/REAL(n_increments)
+        deld = 0.0
+        d = 0.0
+
+        sigma_n = 0.0
+        sigma_yield = 0.1 !This has to be initialized in agreement with data
 
         DO i = 1, n_increments
             PRINT *, "Iteration number: ", i
 
             ! Update P_n
             p_n = p_n + delta_p
+            del_p = delta_p
 
             ! Compute stiffness matrix
             call buildstiff
@@ -177,12 +185,12 @@ contains
             ! Factor stiffness matrix
             call factor(kmat)
             ! Solve for displacement vector
-            del_p = delta_p
             call solve(kmat, del_p)
             ! Transfer results
             deld(1:neqn) = del_p(1:neqn)
             ! Update D_n
             d = d + deld
+            stop
             ! Recover stress and strain
             call recover
         END DO
@@ -237,7 +245,7 @@ contains
                 fe = loads(i, 4)
                 thk = mprop(element(e)%mat)%thk
                 eface = loads(i, 3)
-                call plane42rect_re(xe, eface, fe, thk, re)
+                call plane42_re(xe, eface, fe, thk, re)
                 do k = 1, nen*2
                     p(edof(k)) = p(edof(k)) + re(k)
                 end do
@@ -288,7 +296,9 @@ contains
                  young = mprop(element(e)%mat)%young
                  area  = mprop(element(e)%mat)%area
                  if (plasticity) then
-                    call link1_ke_plastic()
+                    !call link1_ke_plastic()
+                    print *, "No plastic implementation"
+                    stop
                  else
                     call link1_ke(xe, young, area, ke)
                  end if
@@ -297,7 +307,7 @@ contains
                 nu = mprop(element(e)%mat)%nu
                 thk = mprop(element(e)%mat)%thk
                 if (plasticity) then
-                    call plane42_ke_plastic()
+                    call plane42_ke_plastic(xe, young, sigma_yield(e), nu, thk, ke, sigma_n(e, 1:3))
                  else
                     call plane42_ke(xe, young, nu, thk, ke)
                  end if
@@ -434,9 +444,11 @@ contains
                 young = mprop(element(e)%mat)%young
                 area  = mprop(element(e)%mat)%area
                 if (plasticity) then
-                    call link1_ke_plastic()
+                    !call link1_ke_plastic()
+                    print *, "NO implementation for truss"
+                    stop
                     p(edof(1:2*nen)) = p(edof(1:2*nen)) + matmul(ke(1:2*nen,1:2*nen), de(1:2*nen))
-                    call link1_ss_plastic()
+                    !call link1_ss_plastic()
                 else
                     call link1_ke(xe, young, area, ke)
                     p(edof(1:2*nen)) = p(edof(1:2*nen)) + matmul(ke(1:2*nen,1:2*nen), de(1:2*nen))
@@ -448,7 +460,9 @@ contains
                 young = mprop(element(e)%mat)%young
                 nu = mprop(element(e)%mat)%nu
                 if (plasticity) then
-                    call plane42_ss_plastic()
+                    !call plane42_ss_plastic()
+                    print *, "ERROR"
+                    stop
                  else
                     call plane42_ss(xe, de, young, nu, estress, estrain, eprincipals)
                  end if
