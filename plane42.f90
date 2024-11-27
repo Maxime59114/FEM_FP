@@ -716,7 +716,7 @@ contains
         cmat(2,2) = fact
         cmat(3,3) = fact*(1-nu)/2
 
-        gpn = 2
+        gpn = 1
 
         if (gpn == 1) then
             gauss_points = [real(wp):: 0.0]
@@ -733,50 +733,6 @@ contains
         end if
 
 
-        !Gaussian point must be chose - chosen in then middle
-
-        zeta = 0
-        eta = 0
-        wi = 2
-        wj = 2
-
-        n1ze = -0.25*(1.0-eta)
-        n1et = -0.25*(1.0-zeta)
-        n2ze = 0.25*(1.0-eta)
-        n2et = -0.25*(1.0+zeta)
-        n3ze = 0.25*(1.0+eta)
-        n3et = 0.25*(1.0+zeta)
-        n4ze = -0.25*(1.0+eta)
-        n4et = 0.25*(1.0-zeta)
-
-        dxdzeta = n1ze*xe(1) + n2ze*xe(3) + n3ze*xe(5) + n4ze*xe(7)
-        dydzeta = n1ze*xe(2) + n2ze*xe(4) + n3ze*xe(6) + n4ze*xe(8)
-        dxdeta = n1et*xe(1) + n2et*xe(3) + n3et*xe(5) + n4et*xe(7)
-        dydeta = n1et*xe(2) + n2et*xe(4) + n3et*xe(6) + n4et*xe(8)
-
-        J_(1, 1:2) = [dxdzeta, dydzeta]
-        J_(2, 1:2) = [dxdeta, dydeta]
-        det_J = dxdzeta*dydeta-dxdeta*dydzeta
-
-        n_tylde(1, 1:8) = [real(wp) :: n1ze, 0, n2ze, 0, n3ze, 0, n4ze, 0]
-        n_tylde(2, 1:8) = [real(wp) :: n1et, 0, n2et, 0, n3et, 0, n4et, 0]
-        n_tylde(3, 1:8) = [real(wp) :: 0, n1ze, 0, n2ze, 0, n3ze, 0, n4ze]
-        n_tylde(4, 1:8) = [real(wp) :: 0, n1et, 0, n2et, 0, n3et, 0, n4et]
-
-        G_tylde = 0
-        G_tylde(1, 1:4) = [real(wp) :: J_(2,2), -J_(1,2), 0.0,0.0]
-        G_tylde(2, 1:4) = [real(wp) :: -J_(2,1), J_(1,1), 0.0,0.0]
-        G_tylde(3, 1:4) = [real(wp) :: 0.0, 0.0, J_(2,2), -J_(1,2)]
-        G_tylde(4, 1:4) = [real(wp) :: 0.0, 0.0, -J_(2,1), J_(1,1)]
-        G_tylde = (1/det_J)*G_tylde
-
-        L(1, 1:4) = [real(wp) :: 1.0, 0.0, 0.0, 0.0]
-        L(2, 1:4) = [real(wp) :: 0.0, 0.0, 0.0, 1.0]
-        L(3, 1:4) = [real(wp) :: 0.0, 1.0, 1.0, 0.0]
-
-        bmat = matmul(L, matmul(G_tylde, N_tylde))
-
-
         sigma_e = sqrt(estress_p(1,1)**2 + estress_p(2,1)**2 - estress_p(1,1)*estress_p(2,1) + 3*estress_p(3,1)**2)
         h = (youngt*young)/(young - youngt)
 
@@ -785,8 +741,48 @@ contains
         dFdsigma_p(1,2) = (2*estress_p(2,1) - estress_p(1,1))/sigma_e
         dFdsigma_p(1,3) = 6*estress_p(3,1)/sigma_e
 
-        do i = 1,gpn
-            do j = 1,gpn
+        do i=1, gpn
+            zeta = gauss_points(i)
+            wi = weights(i)
+            do j=1, gpn
+                eta = gauss_points(j)
+                wj = weights(j)
+
+                n1ze = -0.25*(1.0-eta)
+                n1et = -0.25*(1.0-zeta)
+                n2ze = 0.25*(1.0-eta)
+                n2et = -0.25*(1.0+zeta)
+                n3ze = 0.25*(1.0+eta)
+                n3et = 0.25*(1.0+zeta)
+                n4ze = -0.25*(1.0+eta)
+                n4et = 0.25*(1.0-zeta)
+
+                dxdzeta = n1ze*xe(1) + n2ze*xe(3) + n3ze*xe(5) + n4ze*xe(7)
+                dydzeta = n1ze*xe(2) + n2ze*xe(4) + n3ze*xe(6) + n4ze*xe(8)
+                dxdeta = n1et*xe(1) + n2et*xe(3) + n3et*xe(5) + n4et*xe(7)
+                dydeta = n1et*xe(2) + n2et*xe(4) + n3et*xe(6) + n4et*xe(8)
+
+                J_(1, 1:2) = [dxdzeta, dydzeta]
+                J_(2, 1:2) = [dxdeta, dydeta]
+                det_J = dxdzeta*dydeta-dxdeta*dydzeta
+
+                n_tylde(1, 1:8) = [real(wp) :: n1ze, 0, n2ze, 0, n3ze, 0, n4ze, 0]
+                n_tylde(2, 1:8) = [real(wp) :: n1et, 0, n2et, 0, n3et, 0, n4et, 0]
+                n_tylde(3, 1:8) = [real(wp) :: 0, n1ze, 0, n2ze, 0, n3ze, 0, n4ze]
+                n_tylde(4, 1:8) = [real(wp) :: 0, n1et, 0, n2et, 0, n3et, 0, n4et]
+
+                G_tylde = 0
+                G_tylde(1, 1:4) = [real(wp) :: J_(2,2), -J_(1,2), 0.0,0.0]
+                G_tylde(2, 1:4) = [real(wp) :: -J_(2,1), J_(1,1), 0.0,0.0]
+                G_tylde(3, 1:4) = [real(wp) :: 0.0, 0.0, J_(2,2), -J_(1,2)]
+                G_tylde(4, 1:4) = [real(wp) :: 0.0, 0.0, -J_(2,1), J_(1,1)]
+                G_tylde = (1/det_J)*G_tylde
+
+                L(1, 1:4) = [real(wp) :: 1.0, 0.0, 0.0, 0.0]
+                L(2, 1:4) = [real(wp) :: 0.0, 0.0, 0.0, 1.0]
+                L(3, 1:4) = [real(wp) :: 0.0, 1.0, 1.0, 0.0]
+
+                bmat = matmul(L, matmul(G_tylde, N_tylde))
                 delta_estrain_n = matmul(bmat,delta_de_n)
 
                 if (F<0) then
