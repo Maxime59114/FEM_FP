@@ -7,7 +7,7 @@ module processor
     use fedata
     implicit none
 
-    public :: input, output, stopwatch, plotmatlabdef, plotmatlabeval, plotmatlabevec, plotmatlabeig
+    public :: input, output, stopwatch, plotmatlabdef, plotmatlabeval, plotmatlabevec, plotmatlabeig, generate_matlab_code
     private
 
     ! Counters for output files
@@ -887,5 +887,100 @@ contains
         print*,'and script file: ', trim(fscript)
         print*,' '
     end subroutine plotmatlabeig
+
+
+    !
+    !-------------------------------------------------------------------------------------------
+    !
+    subroutine write_to_matlab(vector1,vector2)
+
+        ! Déclaration des variables
+
+        real(wp), dimension(:),intent(in) :: vector1, vector2
+        real(wp) :: i,n
+        character(len=100) :: filename
+        n = n_increments
+
+        ! Nom du fichier MATLAB
+        filename = "vectors.m"
+
+        ! Écriture des vecteurs dans un fichier
+        open(unit=10, file=filename, status="unknown", action="write")
+
+        write(10, '(A)') "vector1 = ["
+        do i = 1, n
+            if (i == n) then
+                write(10, '(F8.5)', advance="no") vector1(i)
+            else
+                write(10, '(F8.5, 1X)', advance="no") vector1(i)
+            end if
+        end do
+        write(10, '(A)') "];"
+
+        write(10, '(A)') "vector2 = ["
+        do i = 1, n
+            if (i == n) then
+                write(10, '(F8.5)', advance="no") vector2(i)
+            else
+                write(10, '(F8.5, 1X)', advance="no") vector2(i)
+            end if
+        end do
+        write(10, '(A)') "];"
+
+        close(10)
+
+        print *, "Vectors written to ", trim(filename)
+
+        end subroutine write_to_matlab
+
+
+
+    subroutine generate_matlab_code(vector1, vector2)
+
+        integer :: i
+        real(wp), dimension(:), intent(in) :: vector1, vector2
+        character(len=100) :: filename
+        character(len=1000) :: matlab_code
+
+        ! Nom du fichier MATLAB
+        filename = 'generate_plot.m'
+
+        ! Générer le code MATLAB pour créer le graphique
+        open(unit=10, file=filename, status='replace')
+
+        write(10, '(A)') '%% MATLAB Code to plot vector2 vs vector1'
+        write(10, '(A)') 'vector1 = ['
+        do i = 1, size(vector1)
+            if (i == size(vector1)) then
+                write(10, '(F8.2)') vector1(i)
+            else
+                write(10, '(F8.2, 1X)') vector1(i)
+            end if
+        end do
+        write(10, '(A)') '];'
+
+        write(10, '(A)') 'vector2 = ['
+        do i = 1, size(vector2)
+            if (i == size(vector2)) then
+                write(10, '(F8.2)') vector2(i)
+            else
+                write(10, '(F8.2, 1X)') vector2(i)
+            end if
+        end do
+        write(10, '(A)') '];'
+
+        write(10, '(A)') 'figure;'
+        write(10, '(A)') 'plot(vector1, vector2, ''-o'', ''LineWidth'', 2);'
+        write(10, '(A)') 'xlabel(''strain'');'
+        write(10, '(A)') 'ylabel(''stress'');'
+        write(10, '(A)') 'title(''Graph of stress vs. strain'');'
+        write(10, '(A)') 'saveas(gcf, ''stress_plot.png'');'
+        write(10, '(A)') 'disp(''Graph saved as stress_plot.png'');'
+
+        close(10)
+
+        print *, 'MATLAB code has been written to ', trim(filename)
+
+    end subroutine generate_matlab_code
 
 end module processor
