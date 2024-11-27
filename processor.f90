@@ -250,7 +250,7 @@ contains
                     mprop(ivalue)%youngy = rvalue
                 case ('GXY', 'gxy')
                     mprop(ivalue)%shear = rvalue
-                case('YST','yst)
+                case ('YST', 'yst')
                     mprop(ivalue)%yieldstress = rvalue
                 case default
                     write (*, *) 'ERROR: Undefined material property: ', trim(cvalue)
