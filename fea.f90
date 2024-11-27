@@ -460,9 +460,33 @@ contains
                 young = mprop(element(e)%mat)%young
                 nu = mprop(element(e)%mat)%nu
                 if (plasticity) then
-                    !call plane42_ss_plastic()
-                    print *, "ERROR"
-                    stop
+                    youngt = mprop(element(e)%mat)%youngt
+                    yieldstress = mprop(element(e)%mat)%yieldstress
+
+                    do i = 1, nen
+                        delta_de_n(2*i-1,1) = del_d(edof(2*i-1))
+                        delta_de_n(2*i,1)   = del_d(edof(2*i))
+
+                        estress_p(1,1) = stress_p(element(e)%ix(i),1)
+                        estress_p(2,1) = stress_p(element(e)%ix(i),2)
+                        estress_p(3,1) = stress_p(element(e)%ix(i),3)
+
+                        estrain_p(1,1) = strain_p(element(e)%ix(i),1)
+                        estrain_p(2,1) = strain_p(element(e)%ix(i),2)
+                        estrain_p(3,1) = strain_p(element(e)%ix(i),3)
+
+                    end do
+
+                    esigma_Y_p = sigma_yield(e)
+
+                    call plane42_ss_plastic(xe, delta_de_n, young, youngt, nu,estress_p,estress_n, estrain_p, &
+                                            esigma_Y_p, esigma_Y_n)
+                    stress(e,1) = stress(e,1) + estress_n(1,1)
+                    stress(e,2) = stress(e,2) + estress_n(2,1)
+                    stress(e,3) = stress(e,3) + estress_n(3,1)
+
+                    stress_p = stress
+                    sigma_yield(e) = esigma_Y_n
                  else
                     call plane42_ss(xe, de, young, nu, estress, estrain, eprincipals)
                  end if
