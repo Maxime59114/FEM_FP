@@ -156,6 +156,7 @@ module fedata
         !! * column 3: angle between principal stresses
 
     real(wp), dimension(:), allocatable :: stress_array
+    real(wp), dimension(:), allocatable :: strain_array
 
     real(wp), dimension(:), allocatable :: sigma_yield
         !! the value of yield stress for each element
@@ -190,6 +191,7 @@ module fedata
         !! Scale length of vectors for plotting
     real(wp), parameter :: scale_thk = 1.0_wp
         !! Scale thickness of lines
+    real(wp), parameter :: n_increments = 10
     logical, parameter :: banded = .false.
     !logical, parameter :: banded = .true.
         !! Indicate whether the system matrix is in banded form or not (full matrix)
