@@ -52,6 +52,7 @@ module fedata
         !! might not use all of the properties defined below
         real(wp) :: young
             !! Young's Modulus
+        real(wp) :: youngt
         real(wp) :: nu
             !! Poisson's Ratio
         real(wp) :: thk
@@ -64,6 +65,7 @@ module fedata
             !! Young's Modulus in the transverse direction (used for orthotropic materials)
         real(wp) :: shear
             !! Shear Modulus (used for orthotropic materials)
+        real(wp) :: yieldstress
     end type matprop
     type(matprop), dimension(:), allocatable :: mprop
         !! The materials of a structure
@@ -115,6 +117,13 @@ module fedata
         !! * column 1: \(\epsilon_{11}\)
         !! * column 2: \(\epsilon_{22}\)
         !! * column 3: \(\epsilon_{12}\)
+    real(wp), dimension(:,:), allocatable :: strain_p
+        !! Strains at different places in the structure step n-1
+        !!
+        !! * _i_-th row: strain in element _i_
+        !! * column 1: \(\epsilon_{11}\)
+        !! * column 2: \(\epsilon_{22}\)
+        !! * column 3: \(\epsilon_{12}\)
     real(wp), dimension(:,:), allocatable :: stress
         !! Stresses at different places in the structure
         !!
@@ -122,10 +131,20 @@ module fedata
         !! * column 1: \(\sigma_{11}\)
         !! * column 2: \(\sigma_{22}\)
         !! * column 3: \(\sigma_{12}\)
+    real(wp), dimension(:,:), allocatable :: stress_p
+        !! Stresses at different places in the structure step n-1
+        !!
+        !! * _i_-th row: stress in element _i_
+        !! * column 1: \(\sigma_{11}\)
+        !! * column 2: \(\sigma_{22}\)
+        !! * column 3: \(\sigma_{12}\)
+
     real(wp), dimension(:),   allocatable :: p
         !! Force vector
-    real(wp), dimension(:),   allocatable :: del_p
     real(wp), dimension(:),   allocatable :: d
+        !! Displacement vector
+    real(wp), dimension(:),   allocatable :: del_p
+    real(wp), dimension(:),   allocatable :: del_d
         !! Displacement vector
 
     real(wp), dimension(:,:), allocatable :: principals
@@ -136,13 +155,14 @@ module fedata
         !! * column 2: principal stress 2
         !! * column 3: angle between principal stresses
 
-    real(wp), dimension(:,:), allocatable :: sigma_n
-        !! Stresses from iteration n in each element
+    real(wp), dimension(:,:), allocatable :: sigma_n, sigma_p
+        !! Stresses from iteration n and n-1 in each element
         !!
         !! * _i_-th row: stress in element _i_
         !! * column 1: sigma11
         !! * column 2: sigma22
         !! * column 3: sigma12 = sigma21
+
     real(wp), dimension(:), allocatable :: sigma_yield
         !! the value of yield stress for each element
 
