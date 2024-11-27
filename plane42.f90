@@ -379,7 +379,7 @@ contains
         real(wp) :: principalstresses(2), principaldirections(2)
         real(wp), dimension(:), intent(out) :: eprincipals
 
-        real(wp) :: n1ze, n2ze, n3ze, n4ze, n1et, n2et, n3et, n4et, zeta, eta, wi, wj, dxdzeta, dydzeta, dxdeta, dydeta, det_J
+        real(wp) :: n1ze, n2ze, n3ze, n4ze, n1et, n2et, n3et, n4et, zeta, eta, wi, wj, dxdzeta, dydzeta, dxdeta, dydeta, det_J,k
         real(wp) :: J(2,2), n_tylde(4, 8), G_tylde(4, 4), L(3, 4)
 
         !Gaussian point must be chose - chosen in then middle
@@ -424,7 +424,10 @@ contains
         L(3, 1:4) = [real(wp) :: 0.0, 1.0, 1.0, 0.0]
 
         bmat = matmul(L, matmul(G_tylde, N_tylde))
-
+        print*,'bmat'
+        DO k = 1, 3
+            print "(24(f4.2,tr1))", bmat(k,1:8)
+        END DO
         ! Compute element strain
         estrain = matmul(bmat, de)
         !print *, 'Element displacements'
@@ -438,6 +441,11 @@ contains
         cmat(3, 1:3) = [real(wp):: 0.0, 0.0, (1-nu)/2]
 
         cmat = young/(1.0-nu**2.0)*cmat
+
+        print*,'cmat'
+        DO k = 1, 3
+            print "(24(f4.2,tr1))", cmat(k,1:3)
+        END DO
         !print *, 'this is cmat'
         !print *, cmat
 
@@ -530,7 +538,7 @@ contains
         real(wp), dimension(1,3) :: dFdsigma
             ! - dFdsigma: derivative of F by sigma
 
-        gpn = 2
+
         allocate(gauss_points(gpn))
         allocate(weights(gpn))
 
@@ -574,7 +582,7 @@ contains
         !stop
         cmat_ep = cmat - (matmul(matmul(cmat,transpose(dFdsigma)),matmul(dFdsigma,cmat)))/(cmat_epd(1,1)+h)
 
-
+        gpn = 3
         if (gpn == 1) then
             gauss_points = [real(wp):: 0.0]
             weights = [real(wp):: 2.0]
@@ -656,8 +664,8 @@ contains
 !
 !--------------------------------------------------------------------------------------------------
 !
-    subroutine plane42_ss_plastic(xe, delta_de_n, young, youngt, nu,estress_p,estress_n, estrain_p, &
-        esigma_Y_p, esigma_Y_n)
+    subroutine plane42_ss_plastic(xe, delta_de_n, young, youngt, nu,estress_p,estress_n, &
+        estrain_p, estrain_n, esigma_Y_p, esigma_Y_n)
 
         real(wp), intent(in) :: young, youngt, nu
             ! - young = elastic young modulus
@@ -672,7 +680,7 @@ contains
 
         real(wp), dimension(3,1) :: delta_estress_n, delta_estrain_n
 
-        real(wp), dimension(3,1), intent(out) :: estress_n
+        real(wp), dimension(3,1), intent(out) :: estress_n, estrain_n
             ! - estress_n: stress of the element e, load increment n (actual step)
 
         real(wp), intent(in) :: esigma_Y_p
@@ -690,7 +698,7 @@ contains
                 !! * `xe(7:8)` = \((x,y)\)-coordinates of element node 2
                 !!
 
-        integer :: gpn, i, j
+        integer :: gpn, i, j, k
         real(wp), allocatable :: gauss_points(:), weights(:)
         real(wp) :: fact, F, h
          ! - F: Yield function
@@ -715,8 +723,11 @@ contains
         cmat(2,1) = fact*nu
         cmat(2,2) = fact
         cmat(3,3) = fact*(1-nu)/2
-
-        gpn = 1
+        print*,'cmat'
+        DO k = 1, 3
+            print "(24(f4.2,tr1))", cmat(k,1:3)
+        END DO
+        gpn = 2
 
         if (gpn == 1) then
             gauss_points = [real(wp):: 0.0]
@@ -735,12 +746,13 @@ contains
 
         sigma_e = sqrt(estress_p(1,1)**2 + estress_p(2,1)**2 - estress_p(1,1)*estress_p(2,1) + 3*estress_p(3,1)**2)
         h = (youngt*young)/(young - youngt)
-
+        print*,'h',h
         F = sigma_e - esigma_Y_p
+        print*,'F', F
         dFdsigma_p(1,1) = (2*estress_p(1,1) - estress_p(2,1))/sigma_e
         dFdsigma_p(1,2) = (2*estress_p(2,1) - estress_p(1,1))/sigma_e
         dFdsigma_p(1,3) = 6*estress_p(3,1)/sigma_e
-
+        print*,'dFdsigma_p',dFdsigma_p
         do i=1, gpn
             zeta = gauss_points(i)
             wi = weights(i)
@@ -783,12 +795,28 @@ contains
                 L(3, 1:4) = [real(wp) :: 0.0, 1.0, 1.0, 0.0]
 
                 bmat = matmul(L, matmul(G_tylde, N_tylde))
-                delta_estrain_n = matmul(bmat,delta_de_n)
 
+                delta_estrain_n = matmul(bmat,delta_de_n)
+                do k = 1,3
+                    if (abs(delta_estrain_n(k,1)) < 10e-8) then
+                        delta_estrain_n(k,1) = 0
+                    end if
+                end do
+                print*,'bmat'
+                DO k = 1, 3
+                    print "(24(f4.2,tr1))", bmat(k,1:8)
+                END DO
+
+                print*,'delta_estrain_n',delta_estrain_n
                 if (F<0) then
                     delta_estress_n = matmul(cmat,delta_estrain_n)
+                    do k = 1,3
+                        if (abs(delta_estress_n(k,1)) < 10e-8) then
+                            delta_estress_n(k,1) = 0
+                        end if
+                    end do
                     esigma_Y_n = esigma_Y_p
-
+                    print*, 'delta_estress_n', delta_estress_n
                 else
                     lambda_denom = matmul(matmul(dFdsigma_p,cmat),transpose(dFdsigma_p))
                     delta_lambda_n = matmul(matmul(dFdsigma_p,cmat)/(lambda_denom(1,1) + h), delta_estrain_n)
@@ -799,13 +827,10 @@ contains
                     end if
                 end if
                 estress_n = estress_p + delta_estress_n
+                estrain_n =estrain_p + delta_estrain_n
             end do
         end do
 
     end subroutine plane42_ss_plastic
-
-
-
-
 
 end module plane42
