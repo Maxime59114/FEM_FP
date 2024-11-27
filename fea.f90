@@ -45,11 +45,13 @@ contains
             allocate(kmat(bw,neqn))
             print *, 'allocation implemented for band'
         end if
-        allocate (p(neqn), d(neqn), del_p(neqn))
+        allocate (p(neqn), d(neqn), del_p(neqn), del_d(neqn))
         allocate (strain(ne, 3), stress(ne, 3))
         allocate (principals(ne, 3))
-        allocate (sigma_n(ne, 3))
         allocate (sigma_yield(ne))
+        allocate (strain_p(ne,3),stress_p(ne,3))
+        allocate (stress_array(100))
+
 
         ! Initial stress and strain
         strain = 0
@@ -146,6 +148,10 @@ contains
 
     end subroutine displ
 
+!
+!--------------------------------------------------------------------------------------------------
+!
+
     subroutine plastic_iterator_1
 
         use fedata
@@ -153,20 +159,23 @@ contains
         use processor
 
         integer :: n_increments, i
-        real(wp) :: p_n(size(p)), delta_p(size(p)), deld(size(p))
+        real(wp) :: p_n(size(p)), delta_p(size(p))
 
-        n_increments = 10
+        n_increments = 100
 
         call buildload !Makes sure vector p is correct
 
         p_n = 0.0
         del_p = 0.0
         delta_p = p/REAL(n_increments)
-        deld = 0.0
-        d = 0.0
+        del_d = 0.0
 
-        sigma_n = 0.0
-        sigma_yield = 0.1 !This has to be initialized in agreement with data
+        d = 0.0
+        print*,'p_n_0',p_n
+
+        do i = 1, ne
+            sigma_yield(i) = mprop(element(i)%mat)%yieldstress
+        end do
 
         DO i = 1, n_increments
             PRINT *, "Iteration number: ", i
@@ -174,7 +183,9 @@ contains
             ! Update P_n
             p_n = p_n + delta_p
             del_p = delta_p
-
+            print*, 'i = ', i
+            print*,'p_n',p_n
+            print*,'delta_p', delta_p
             ! Compute stiffness matrix
             call buildstiff
 
@@ -187,15 +198,17 @@ contains
             ! Solve for displacement vector
             call solve(kmat, del_p)
             ! Transfer results
-            deld(1:neqn) = del_p(1:neqn)
+            del_d(1:neqn) = del_p(1:neqn)
             ! Update D_n
-            d = d + deld
-            stop
+            d = d + del_d
+
             ! Recover stress and strain
             call recover
+            stress_array(i) =sqrt(stress(3,1)**2.0 + stress(3,2)**2.0 - stress(3,1)*stress(3,2) + 3.0*stress(3,3)**2.0)
         END DO
         !!Process the results
 
+        print*,'stresse_array', stress_array
    end subroutine plastic_iterator_1
 !
 !--------------------------------------------------------------------------------------------------
@@ -306,8 +319,9 @@ contains
                 young = mprop(element(e)%mat)%young
                 nu = mprop(element(e)%mat)%nu
                 thk = mprop(element(e)%mat)%thk
+                print*,'thk',thk
                 if (plasticity) then
-                    call plane42_ke_plastic(xe, young, sigma_yield(e), nu, thk, ke, sigma_n(e, 1:3))
+                    call plane42_ke_plastic(xe, young, sigma_yield(e), nu, thk, ke, stress(e, 1:3))
                  else
                     call plane42_ke(xe, young, nu, thk, ke)
                  end if
@@ -335,6 +349,11 @@ contains
                 end do
             end if
         end do
+        print*,'Kmat'
+        DO i = 1, neqn
+            print "(24(f4.2,tr1))", kmat(i,1:neqn)
+        END DO
+
     end subroutine buildstiff
 !
 !--------------------------------------------------------------------------------------------------
@@ -417,10 +436,16 @@ contains
         integer :: edof(mdim)
         real(wp), dimension(mdim) :: xe, de
         real(wp), dimension(mdim, mdim) :: ke
-        real(wp) :: young, area
+        real(wp) :: young, area, youngt
 ! Hint for continuum elements:
         real(wp):: nu, dens, thk
         real(wp), dimension(3) :: estrain, estress, eprincipals
+        real(wp) :: delta_de_n(8,1)
+
+        real(wp), dimension(3,1) :: estress_p, estress_n, estrain_p, estrain_n
+
+        real(wp) :: esigma_Y_p
+        real(wp) :: esigma_Y_n
 
         ! Reset force vector
         p = 0
@@ -459,23 +484,22 @@ contains
             case( 2 )
                 young = mprop(element(e)%mat)%young
                 nu = mprop(element(e)%mat)%nu
+
                 if (plasticity) then
                     youngt = mprop(element(e)%mat)%youngt
-                    yieldstress = mprop(element(e)%mat)%yieldstress
-
+                    print*, 'youngt', youngt
+                    print*, 'yieldstress(e)', sigma_yield(e)
                     do i = 1, nen
                         delta_de_n(2*i-1,1) = del_d(edof(2*i-1))
                         delta_de_n(2*i,1)   = del_d(edof(2*i))
-
-                        estress_p(1,1) = stress_p(element(e)%ix(i),1)
-                        estress_p(2,1) = stress_p(element(e)%ix(i),2)
-                        estress_p(3,1) = stress_p(element(e)%ix(i),3)
-
-                        estrain_p(1,1) = strain_p(element(e)%ix(i),1)
-                        estrain_p(2,1) = strain_p(element(e)%ix(i),2)
-                        estrain_p(3,1) = strain_p(element(e)%ix(i),3)
-
                     end do
+                    estress_p(1,1) = stress_p(e,1)
+                    estress_p(2,1) = stress_p(e,2)
+                    estress_p(3,1) = stress_p(e,3)
+
+                    estrain_p(1,1) = strain_p(e,1)
+                    estrain_p(2,1) = strain_p(e,2)
+                    estrain_p(3,1) = strain_p(e,3)
 
                     esigma_Y_p = sigma_yield(e)
 
@@ -485,18 +509,23 @@ contains
                     stress(e,2) = stress(e,2) + estress_n(2,1)
                     stress(e,3) = stress(e,3) + estress_n(3,1)
 
-                    stress_p = stress
+
                     sigma_yield(e) = esigma_Y_n
+
                  else
                     call plane42_ss(xe, de, young, nu, estress, estrain, eprincipals)
                  end if
                 stress(e, 1:3) = estress
                 strain(e, 1:3) = estrain
                 principals(e, 1:3) = eprincipals
+                stress_p = stress
+                print*,'stress',stress
             end select
         end do
     end subroutine recover
-
+!
+!--------------------------------------------------------------------------------------------------
+!
     subroutine compliance(kmat_old)
         use fedata
         real(wp), dimension(:,:), intent(in) :: kmat_old
@@ -508,6 +537,9 @@ contains
 
     end subroutine
 
+!
+!--------------------------------------------------------------------------------------------------
+!
 
     subroutine plastic_enforce
 
