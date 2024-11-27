@@ -26,7 +26,7 @@ module plane42
     save
 
     private
-    public :: plane42_ke, plane42_re, plane42_ss, plane42_ke_plastic
+    public :: plane42_ke, plane42_re, plane42_ss, plane42_ke_plastic, plane42_ss_plastic
 
 contains
 
@@ -490,7 +490,7 @@ contains
             ! - youngt = plastic young modulus
 
         real(wp), intent(in) :: esigma_Y_p
-            ! - sigma_Y_p: vector of the yield stress, load increment n-1 (previous step)
+            ! - esigma_Y_p:  yield stress, element e, load increment n-1 (previous step)
 
         real(wp), dimension(:), intent(in) :: xe
             !! Nodal coordinates of this element in undeformed configuration
@@ -585,7 +585,7 @@ contains
             gauss_points = [real(wp):: 0, sqrt(0.6), -1.0*sqrt(0.6)]
             weights = [real(wp):: 8.0/9.0, 5.0/9.0, 5.0/9.0]
         else
-            print *, 'Invalid number of gauss points'
+            print *, 'Invalid number of gauss points ke_plastic'
             stop
         end if
 
@@ -716,6 +716,8 @@ contains
         cmat(2,2) = fact
         cmat(3,3) = fact*(1-nu)/2
 
+        gpn = 2
+
         if (gpn == 1) then
             gauss_points = [real(wp):: 0.0]
             weights = [real(wp):: 2.0]
@@ -726,7 +728,7 @@ contains
             gauss_points = [real(wp):: 0, sqrt(0.6), -1.0*sqrt(0.6)]
             weights = [real(wp):: 8.0/9.0, 5.0/9.0, 5.0/9.0]
         else
-            print *, 'Invalid number of gauss points'
+            print *, 'Invalid number of gauss points ss_plastic'
             stop
         end if
 
@@ -805,8 +807,6 @@ contains
         end do
 
     end subroutine plane42_ss_plastic
-
-
 
 
 
